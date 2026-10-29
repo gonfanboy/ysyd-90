@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex">
+<title>動画Bot 登録</title>
+<style>
+  body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "Hiragino Sans", "Yu Gothic", Meiryo, sans-serif; background: #f5f5f3; color: #222; }
+  main { max-width: 440px; margin: 0 auto; padding: 48px 24px; text-align: center; }
+  h1 { font-size: 20px; font-weight: 500; margin: 0 0 24px; }
+  #msg { font-size: 16px; line-height: 1.8; margin: 0 0 24px; white-space: pre-line; }
+  #msg.ok { color: #0f6e56; }
+  #msg.ng { color: #a32d2d; }
+  button { font-size: 16px; padding: 12px 32px; border: 0; border-radius: 8px; background: #06c755; color: #fff; }
+  button[hidden] { display: none; }
+</style>
+</head>
+<body>
+<main>
+  <h1>動画Bot 登録</h1>
+  <p id="msg">確認しています…</p>
+  <button id="close" hidden>閉じる</button>
+</main>
+
+<script src="https://static.line-scdn.net/liff/edge/2/sdk.js"></script>
+<script>
+  // ▼ ここの2つを、自分の値に書き換える ▼
+  var LIFF_ID = 'ここにLIFF IDを貼る';
+  var GAS_URL = 'ここにGASのウェブアプリのURLを貼る';
+  // ▲ ここまで ▲
+
+  var ERRORS = {
+    invalid: 'このリンクは、無効か、すでに使われています。\n管理者に連絡してください。',
+    expired: 'このリンクは有効期限が切れています。\n管理者に、新しいリンクを依頼してください。',
+    used: 'このリンクは、別のLINEアカウントで使用済みです。\n管理者に連絡してください。',
+    duplicate: 'このLINEアカウントは、別の選手として登録済みです。\n管理者に連絡してください。',
+    locked: '失敗が続いたため、しばらく使えません。\n時間をおいてから、もう一度お試しください。',
+    auth: 'LINEの認証に失敗しました。\nLINEアプリで、リンクを開き直してください。',
+    server_config: '設定に問題があります。\n管理者に連絡してください。',
+    bad_request: 'リンクが正しくありません。\n管理者に連絡してください。',
+    server: '一時的なエラーが起きました。\n少し待ってから、もう一度お試しください。',
+    sdk: 'LINEの登録画面を読み込めませんでした。\nLINEアプリで、配布されたリンクから開いてください。',
+    setup: '設定が未完了です。\n(管理者向け: index.htmlの LIFF_ID と GAS_URL を書き込んでください)'
+  };
+
+  var msgEl = document.getElementById('msg');
+  var closeBtn = document.getElementById('close');
+
+  function show(text, cls) {
+    msgEl.textContent = text;
+    msgEl.className = cls || '';
+    if (cls) {
+      closeBtn.hidden = false;
+      closeBtn.onclick = function () {
+        if (liff.isInClient()) liff.closeWindow(); else window.close();
+      };
+    }
+  }
+
+  function getToken() {
+    var p = new URLSearchParams(location.search);
+    var t = p.get('t');
+    if (!t) {
+      var st = p.get('liff.state');
+      if (st) {
+        try {
+          var q = decodeURIComponent(st);
+          var i = q.indexOf('?');
+          if (i >= 0) t = new URLSearchParams(q.slice(i)).get('t');
+        } catch (e) {}
+      }
+    }
+    return t;
+  }
+
+  async function main() {
+    try {
+      if (LIFF_ID.indexOf('ここに') === 0 || GAS_URL.indexOf('ここに') === 0) { show(ERRORS.setup, 'ng'); return; }
+      if (typeof liff === 'undefined') { show(ERRORS.sdk, 'ng'); return; }
+      await liff.init({ liffId: LIFF_ID });
+      if (!liff.isLoggedIn()) {
+        liff.login({ redirectUri: location.href });
+        return;
+      }
+      var token = getToken();
+      history.replaceState(null, '', location.pathname);
+      if (!token) { show(ERRORS.bad_request, 'ng'); return; }
+      var idToken = liff.getIDToken();
+      if (!idToken) { show(ERRORS.auth, 'ng'); return; }
+
+      var res = await fetch(GAS_URL + '?action=register', {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ token: token, idToken: idToken })
+      });
+      var data = await res.json();
+      if (data.ok) {
+        var name = data.name ? data.name + 'さん、' : '';
+        show(data.already
+          ? name + 'すでに登録済みです。\nLINEのトークに戻って、公式アカウントに「動画を見る」と送ってください。'
+          : name + '登録が完了しました。\nLINEのトークに戻って、公式アカウントに「動画を見る」と送ってください。', 'ok');
+      } else {
+        show(ERRORS[data.error] || ERRORS.server, 'ng');
+      }
+    } catch (e) {
+      console.error(e);
+      show(ERRORS.server, 'ng');
+    }
+  }
+  main();
+</script>
+</body>
+</html>
